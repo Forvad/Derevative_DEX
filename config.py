@@ -1,5 +1,7 @@
 # 'user:pass@host:port
-data = [[{'exchange': '',  # aevo, hyper
+# aevo, hyper
+# если нет api_key, api_secret оставить пустыми
+data = [[{'exchange': '',
           'private_key': '',
           'api_key': '',
           'api_secret': '',
@@ -11,12 +13,12 @@ data = [[{'exchange': '',  # aevo, hyper
          'proxy': ''}],
         ]
 
-coins = ['BNB']
+coins = ['SOL', "ETH", "ARB", "APT", "BTC"]
 
-value = [50, 70]
+value = [200, 300]  # $, объём открываемых сделок
 
-cycles = 2
+cycles = 5
 
-time_transaction = [3, 5]  # минуты
+time_transaction = [5, 10]  # минуты, время между открытием и закрытием
 
-time_sleep = [3, 5]  # минуты
+time_sleep = [5, 10]  # минуты, ожидание между сделками
