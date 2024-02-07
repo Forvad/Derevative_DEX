@@ -1,6 +1,7 @@
 import random
 import threading
 import time
+from multiprocessing.dummy import Pool
 
 from requests import get
 
@@ -44,22 +45,27 @@ def get_prices(coin_):
 
 
 def aevo_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key: str, api_secret: str, proxy_: str):
-    av = AevoClient(signing_key=private_key,
-                    wallet_address=Account.from_key(private_key).address,
-                    api_key=api_key,
-                    api_secret=api_secret,
-                    env='mainnet',
-                    proxy=proxy_)
+    try:
+        av = AevoClient(signing_key=private_key,
+                        wallet_address=Account.from_key(private_key).address,
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        env='mainnet',
+                        proxy=proxy_)
 
-    data = av.get_markets(coin)[0]
-    # balance = float(av.rest_get_account()['balance'])
+        data = av.get_markets(coin)[0]
+        # balance = float(av.rest_get_account()['balance'])
 
-    order_result = av.rest_create_market_order(data['instrument_id'], is_buy, value_)
-    if order_result.get('order_id'):
-        log().success(f'AEVO | We bought a {coin} coin in the amount of {value_}')
-    else:
-        log().success(f'AEVO | error: {order_result}')
-        time.sleep(2)
+        order_result = av.rest_create_market_order(data['instrument_id'], is_buy, value_)
+        if order_result.get('order_id'):
+            log().success(f'AEVO | We bought a {coin} coin in the amount of {value_}')
+        else:
+            log().success(f'AEVO | error: {order_result}')
+            time.sleep(2)
+            return aevo_trade(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
+    except BaseException as error:
+        log().error(f"AEVO | except: {error}")
+        time.sleep(5)
         return aevo_trade(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
 
 
@@ -79,21 +85,30 @@ def hyper_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_ke
         log().error(f'Hyper | error: {order_result["response"]}')
 
 
-def main():
+def main(data_):
     exchange_buy = {'hyper': hyper_trade, 'aevo': aevo_trade}
     for i in range(cycles):
         coin = random.choice(coins)
-        values = round(random.randint(value[0], value[1]) / get_prices(coin), 2)
+        price = get_prices(coin)
+        if price > 5000:
+            decimal = 3
+        elif price > 1000:
+            decimal = 2
+        else:
+            decimal = 1
+
+        values = round(random.randint(value[0], value[1]) / price, decimal)
         is_buy = random.choice([True, False])
         is_buy_ = False if is_buy else True
         threads = []
-        for ex1, ex2 in data:
-            threads.append(threading.Thread(target=exchange_buy[ex1['exchange']],
-                                            args=(coin, values, is_buy, ex1['private_key'], ex1['api_key'],
-                                                  ex1['api_secret'], ex1['proxy'])))
-            threads.append(threading.Thread(target=exchange_buy[ex2['exchange']],
-                                            args=(coin, values, is_buy_, ex2['private_key'], ex2['api_key'],
-                                                  ex2['api_secret'], ex2['proxy'])))
+        for j, ex in enumerate(data_):
+            if not is_buy:
+                mode = is_buy
+            else:
+                mode = is_buy_
+            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
+                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
+                                                  ex['api_secret'], ex['proxy'])))
 
         for tr in threads:
             tr.start()
@@ -107,13 +122,14 @@ def main():
 
         threads = []
 
-        for ex1, ex2 in data:
-            threads.append(threading.Thread(target=exchange_buy[ex1['exchange']],
-                                            args=(coin, values, is_buy_, ex1['private_key'], ex1['api_key'],
-                                                  ex1['api_secret'], ex1['proxy'])))
-            threads.append(threading.Thread(target=exchange_buy[ex2['exchange']],
-                                            args=(coin, values, is_buy, ex2['private_key'], ex2['api_key'],
-                                                  ex2['api_secret'], ex2['proxy'])))
+        for j, ex in enumerate(data_):
+            if is_buy:
+                mode = is_buy
+            else:
+                mode = is_buy_
+            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
+                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
+                                                  ex['api_secret'], ex['proxy'])))
 
         for tr in threads:
             tr.start()
@@ -126,5 +142,12 @@ def main():
         time.sleep(random.randint(time_sleep[0], time_sleep[1]) * 60)
 
 
+def run():
+    try:
+        with Pool() as pols:
+            pols.map(lambda func: main(func), data)
+    except threading.ThreadError as error:
+        log().error(error)
+
 if __name__ == '__main__':
-    main()
+    run()
