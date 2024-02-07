@@ -5,7 +5,7 @@ import time
 from requests import get
 
 from AEVO.AEVO_SDK import AevoClient
-from config import (private_key1, coins, value, time_transaction, cycles, exchange, time_sleep, data)
+from config import (coins, value, time_transaction, cycles, time_sleep, data)
 
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
