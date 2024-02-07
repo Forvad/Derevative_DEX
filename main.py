@@ -102,7 +102,7 @@ def main(data_):
         is_buy_ = False if is_buy else True
         threads = []
         for j, ex in enumerate(data_):
-            if not is_buy:
+            if not j:
                 mode = is_buy
             else:
                 mode = is_buy_
@@ -123,7 +123,7 @@ def main(data_):
         threads = []
 
         for j, ex in enumerate(data_):
-            if is_buy:
+            if j:
                 mode = is_buy
             else:
                 mode = is_buy_
