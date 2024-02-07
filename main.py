@@ -126,23 +126,5 @@ def main():
         time.sleep(random.randint(time_sleep[0], time_sleep[1]) * 60)
 
 
-def test():
-    coin = random.choice(coins)
-    # values = round(random.randint(value[0], value[1]) / get_prices(coin), 2)
-    values = 0.01
-    log().info(values)
-    is_buy_ = False
-    aevo_trade(coin, values, is_buy_, private_key1, api_key1, apy_secret1, proxy[0])
-
-
-def test2():
-    coin = 'BNB'
-    # coin = random.choice(coins)
-    # values = round(random.randint(value[0], value[1]) / get_prices(coin), 2)
-    values = 0.08
-    log().info(values)
-    is_buy_ = True
-    hyper_trade(coin, values, is_buy_, private_key2, api_key2, apy_secret2, proxy[1])
-
 if __name__ == '__main__':
     main()
