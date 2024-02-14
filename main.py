@@ -120,22 +120,13 @@ def main(data_):
 
         time.sleep(random.randint(time_transaction[0], time_transaction[1]) * 60)
 
-        threads = []
-
         for j, ex in enumerate(data_):
             if j:
                 mode = is_buy
             else:
                 mode = is_buy_
-            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
-                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
-                                                  ex['api_secret'], ex['proxy'])))
-
-        for tr in threads:
-            tr.start()
-
-        for tr in threads:
-            tr.join()
+            exchange_buy[ex['exchange']](coin, values, mode, ex['private_key'], ex['api_key'],
+                                         ex['api_secret'], ex['proxy'])
 
         log([i + 1, cycles]).success(f'Transactions are closed')
 
