@@ -7,12 +7,10 @@ import time
 
 
 import requests
-import websockets
 from eip712_structs import Address, Boolean, EIP712Struct, Uint, make_domain
 from eth_account import Account
 from loguru import logger
 from web3 import Web3
-
 
 
 w3 = Web3(
@@ -99,51 +97,6 @@ class AevoClient:
     def signing_domain(self):
         return CONFIG[self.env]["signing_domain"]
 
-    async def open_connection(self, extra_headers={}):
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-
-        try:
-            logger.info("Opening Aevo websocket connection...")
-
-            self.connection = await websockets.connect(
-                self.ws_url,
-                ssl=ssl_context,
-                ping_interval=1,
-                extra_headers=extra_headers,
-            )
-            if not self.extra_headers:
-                self.extra_headers = extra_headers
-
-            if self.api_key and self.wallet_address:
-                logger.debug(f"Connecting to {self.ws_url}...")
-                await self.connection.send(
-                    json.dumps(
-                        {
-                            "id": 1,
-                            "op": "auth",
-                            "data": {
-                                "key": self.api_key,
-                                "secret": self.api_secret,
-                            },
-                        }
-                    )
-                )
-
-            # Sleep as authentication takes some time, especially slower on testnet
-            await asyncio.sleep(1)
-        except Exception as e:
-            logger.error("Error thrown when opening connection")
-            logger.error(e)
-            logger.error(traceback.format_exc())
-            await asyncio.sleep(10)  # Don't retry straight away
-
-    async def reconnect(self):
-        logger.info("Trying to reconnect Aevo websocket...")
-        await self.close_connection()
-        await self.open_connection(self.extra_headers)
-
     async def close_connection(self):
         try:
             logger.info("Closing connection...")
@@ -153,40 +106,6 @@ class AevoClient:
             logger.error("Error thrown when closing connection")
             logger.error(e)
             logger.error(traceback.format_exc())
-
-    async def read_messages(self, read_timeout=0.1, backoff=0.1, on_disconnect=None):
-        while True:
-            try:
-                message = await asyncio.wait_for(
-                    self.connection.recv(), timeout=read_timeout
-                )
-                yield message
-            except (
-                websockets.exceptions.ConnectionClosedError,
-                websockets.exceptions.ConnectionClosedOK,
-            ) as e:
-                if on_disconnect:
-                    on_disconnect()
-                logger.error("Aevo websocket connection close")
-                logger.error(e)
-                logger.error(traceback.format_exc())
-                await self.reconnect()
-            except asyncio.TimeoutError:
-                await asyncio.sleep(backoff)
-            except Exception as e:
-                logger.error(e)
-                logger.error(traceback.format_exc())
-                await asyncio.sleep(1)
-
-    async def send(self, data):
-        try:
-            await self.connection.send(data)
-        except websockets.exceptions.ConnectionClosedError as e:
-            logger.debug("Restarted Aevo websocket connection")
-            await self.reconnect()
-            await self.connection.send(data)
-        except:
-            await self.reconnect()
 
     # Public REST API
     def get_index(self, asset):
@@ -319,75 +238,6 @@ class AevoClient:
         )
         return req.json()
 
-
-    # Public WS Subscriptions
-    async def subscribe_tickers(self, asset):
-        await self.send(
-            json.dumps(
-                {
-                    "op": "subscribe",
-                    "data": [f"ticker:{asset}:OPTION"],
-                }
-            )
-        )
-
-    async def subscribe_ticker(self, channel):
-        msg = json.dumps(
-            {
-                "op": "subscribe",
-                "data": [channel],
-            }
-        )
-        await self.send(msg)
-
-    async def subscribe_markprice(self, asset):
-        await self.send(
-            json.dumps(
-                {
-                    "op": "subscribe",
-                    "data": [f"markprice:{asset}:OPTION"],
-                }
-            )
-        )
-
-    async def subscribe_orderbook(self, instrument_name):
-        await self.send(
-            json.dumps(
-                {
-                    "op": "subscribe",
-                    "data": [f"orderbook:{instrument_name}"],
-                }
-            )
-        )
-
-    async def subscribe_trades(self, instrument_name):
-        await self.send(
-            json.dumps(
-                {
-                    "op": "subscribe",
-                    "data": [f"trades:{instrument_name}"],
-                }
-            )
-        )
-
-    async def subscribe_index(self, asset):
-        await self.send(json.dumps({"op": "subscribe", "data": [f"index:{asset}"]}))
-
-    # Private WS Subscriptions
-    async def subscribe_orders(self):
-        payload = {
-            "op": "subscribe",
-            "data": ["orders"],
-        }
-        await self.send(json.dumps(payload))
-
-    async def subscribe_fills(self):
-        payload = {
-            "op": "subscribe",
-            "data": ["fills"],
-        }
-        await self.send(json.dumps(payload))
-
     # Private WS Commands
     def create_order_ws_json(
         self,
@@ -436,59 +286,6 @@ class AevoClient:
             "timestamp": int(time.time()),
         }
 
-    async def create_order(
-        self, instrument_id, is_buy, limit_price, quantity, post_only=True, id=None
-    ):
-        data = self.create_order_ws_json(
-            int(instrument_id), is_buy, limit_price, quantity, post_only
-        )
-        payload = {"op": "create_order", "data": data}
-        if id:
-            payload["id"] = id
-
-        logger.info(payload)
-        await self.send(json.dumps(payload))
-
-    async def edit_order(
-        self,
-        order_id,
-        instrument_id,
-        is_buy,
-        limit_price,
-        quantity,
-        id=None,
-        post_only=True,
-    ):
-        instrument_id = int(instrument_id)
-        salt, signature = self.sign_order(instrument_id, is_buy, limit_price, quantity)
-        payload = {
-            "op": "edit_order",
-            "data": {
-                "order_id": order_id,
-                "instrument": instrument_id,
-                "maker": self.wallet_address,
-                "is_buy": is_buy,
-                "amount": str(int(round(quantity * 10**6, is_buy))),
-                "limit_price": str(int(round(limit_price * 10**6, is_buy))),
-                "salt": str(salt),
-                "signature": signature,
-                "post_only": post_only,
-            },
-        }
-
-        if id:
-            payload["id"] = id
-
-        await self.send(json.dumps(payload))
-
-    async def cancel_order(self, order_id):
-        payload = {"op": "cancel_order", "data": {"order_id": order_id}}
-        await self.send(json.dumps(payload))
-
-    async def cancel_all_orders(self):
-        payload = {"op": "cancel_all_orders", "data": {}}
-        await self.send(json.dumps(payload))
-
     def sign_order(
         self, instrument_id, is_buy, limit_price, quantity, decimals=10**6
     ):
@@ -512,7 +309,6 @@ class AevoClient:
             Account._sign_hash(signable_bytes, self.signing_key).signature.hex(),
         )
 
-
     def sign_transaction(
         self, decimals=10**6
     ):
@@ -533,25 +329,5 @@ class AevoClient:
         )
 
 
-async def main():
-    # The following values which are used for authentication on private endpoints, can be retrieved from the Aevo UI
-    aevo = AevoClient(
-        signing_key="",
-        wallet_address="",
-        api_key="",
-        api_secret="",
-        env="testnet",
-    )
-
-    markets = aevo.get_markets("ETH")
-    logger.info(markets)
-
-    await aevo.open_connection()
-    await aevo.subscribe_ticker("ticker:ETH:PERPETUAL")
-
-    async for msg in aevo.read_messages():
-        logger.info(msg)
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    pass
