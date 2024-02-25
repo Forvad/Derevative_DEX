@@ -70,19 +70,24 @@ def aevo_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key
 
 
 def hyper_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key: str, api_secret: str, proxy_: str):
-    account: LocalAccount = Account.from_key(private_key)
-    exchange_ = Exchange(account, constants.MAINNET_API_URL)
-    if proxy_:
-        exchange_.session.proxies = {'http': f'http://{proxy_}', 'https': f'http://{proxy_}'}
+    try:
+        account: LocalAccount = Account.from_key(private_key)
+        exchange_ = Exchange(account, constants.MAINNET_API_URL)
+        if proxy_:
+            exchange_.session.proxies = {'http': f'http://{proxy_}', 'https': f'http://{proxy_}'}
 
-    order_result = exchange_.market_open(coin, is_buy, value_)
-    if order_result["status"] == "ok":
-        if is_buy:
-            log().success(f'Hyper | We bought a {coin} coin in the amount of {value_}')
+        order_result = exchange_.market_open(coin, is_buy, value_)
+        if order_result["status"] == "ok":
+            if is_buy:
+                log().success(f'Hyper | We bought a {coin} coin in the amount of {value_}')
+            else:
+                log().success(f'Hyper | We sold a {coin} coin in the amount of {value_}')
         else:
-            log().success(f'Hyper | We sold a {coin} coin in the amount of {value_}')
-    else:
-        log().error(f'Hyper | error: {order_result["response"]}')
+            log().error(f'Hyper | error: {order_result["response"]}')
+    except BaseException as error:
+        log().error(error)
+        time.sleep(2)
+        return hyper_trade(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
 
 
 def main(data_):
