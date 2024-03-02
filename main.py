@@ -105,21 +105,13 @@ def main(data_):
         values = round(random.randint(value[0], value[1]) / price, decimal)
         is_buy = random.choice([True, False])
         is_buy_ = False if is_buy else True
-        threads = []
         for j, ex in enumerate(data_):
             if not j:
                 mode = is_buy
             else:
                 mode = is_buy_
-            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
-                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
-                                                  ex['api_secret'], ex['proxy'])))
-
-        for tr in threads:
-            tr.start()
-
-        for tr in threads:
-            tr.join()
+            exchange_buy[ex['exchange']](coin, values, mode, ex['private_key'], ex['api_key'],
+                                         ex['api_secret'], ex['proxy'])
 
         log([i + 1, cycles]).success(f'Deals are open')
 
