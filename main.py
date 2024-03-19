@@ -69,6 +69,7 @@ def aevo_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key
         return aevo_trade(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
 
 
+
 def hyper_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key: str, api_secret: str, proxy_: str):
     try:
         account: LocalAccount = Account.from_key(private_key)
@@ -90,8 +91,57 @@ def hyper_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_ke
         return hyper_trade(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
 
 
-def main(data_):
-    exchange_buy = {'hyper': hyper_trade, 'aevo': aevo_trade}
+# def drift_trade(coin: str, value_: float, is_buy: bool, private_key: str, api_key: str, api_secret: str, proxy_: str,
+#                 close=None):
+#     dex = DriftDex(private_key)
+#     if not close:
+#         if is_buy:
+#             mode = 'Long'
+#         else:
+#             mode = 'Short'
+#
+#         dex.add_position(mode, value_, coin)
+#     else:
+#         dex.close_position(coin)
+
+
+def double_aevo(coin: str, value_: float, is_buy: bool, private_key: str, api_key: str, api_secret: str, proxy_: str):
+    av = AevoClient(signing_key=private_key,
+                    wallet_address=Account.from_key(private_key).address,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    env='mainnet',
+                    proxy=proxy_)
+    positions = av.rest_get_account()['positions']
+    data__ = av.get_markets(coin)[0]
+    instrument_id = int(data__['instrument_id'])
+    if not positions:
+        order_result = av.rest_create_market_order(instrument_id, is_buy, value_)
+        if order_result.get('order_id'):
+            log().success(f'AEVO | We bought a {coin} coin in the amount of {value_}')
+            time.sleep(3)
+            price = float(av.get_markets(coin)[0]['mark_price'])
+            if is_buy:
+                price_tp = price * 1.001
+                price_sl = price * 0.999
+            else:
+                price_tp = price * 0.999
+                price_sl = price * 1.001,
+
+            av.create_order_ST_LP(instrument_id, price_tp, price_sl, is_buy)
+            while True:
+                time.sleep(15)
+                positions = av.rest_get_account().get('positions')
+                if not positions:
+                    break
+
+        else:
+            log().success(f'AEVO | error: {order_result}')
+            time.sleep(2)
+            return double_aevo(coin, value_, is_buy, private_key, api_key, api_secret, proxy_)
+
+
+def trade_double(data_):
     for i in range(cycles):
         coin = random.choice(coins)
         price = get_prices(coin)
@@ -105,29 +155,89 @@ def main(data_):
         values = round(random.randint(value[0], value[1]) / price, decimal)
         is_buy = random.choice([True, False])
         is_buy_ = False if is_buy else True
+        threads = []
         for j, ex in enumerate(data_):
             if not j:
                 mode = is_buy
             else:
                 mode = is_buy_
-            exchange_buy[ex['exchange']](coin, values, mode, ex['private_key'], ex['api_key'],
-                                         ex['api_secret'], ex['proxy'])
+            threads.append(threading.Thread(target=double_aevo,
+                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
+                                                  ex['api_secret'], ex['proxy'])))
+
+        for tr in threads:
+            tr.start()
+
+        for tr in threads:
+            tr.join()
+        log([i + 1, cycles]).success(f'Transactions are closed')
+
+        time.sleep(random.randint(time_sleep[0], time_sleep[1]) * 60)
+
+
+def trade_one(data_):
+    exchange_buy = {'hyper': hyper_trade, 'aevo': aevo_trade}
+    for i in range(cycles):
+        coin = random.choice(coins)
+        price = get_prices(coin)
+        if price > 5000:
+            decimal = 3
+        elif price > 1000:
+            decimal = 2
+        else:
+            decimal = 1
+        values = round(random.randint(value[0], value[1]) / price, decimal)
+        is_buy = random.choice([True, False])
+        is_buy_ = False if is_buy else True
+        threads = []
+        for j, ex in enumerate(data_):
+            if not j:
+                mode = is_buy
+            else:
+                mode = is_buy_
+            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
+                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
+                                                  ex['api_secret'], ex['proxy'])))
+
+        for tr in threads:
+            tr.start()
+
+        for tr in threads:
+            tr.join()
 
         log([i + 1, cycles]).success(f'Deals are open')
 
         time.sleep(random.randint(time_transaction[0], time_transaction[1]) * 60)
+
+        threads = []
 
         for j, ex in enumerate(data_):
             if j:
                 mode = is_buy
             else:
                 mode = is_buy_
-            exchange_buy[ex['exchange']](coin, values, mode, ex['private_key'], ex['api_key'],
-                                         ex['api_secret'], ex['proxy'])
+            threads.append(threading.Thread(target=exchange_buy[ex['exchange']],
+                                            args=(coin, values, mode, ex['private_key'], ex['api_key'],
+                                                  ex['api_secret'], ex['proxy'])))
+
+        for tr in threads:
+            tr.start()
+
+        for tr in threads:
+            tr.join()
 
         log([i + 1, cycles]).success(f'Transactions are closed')
 
         time.sleep(random.randint(time_sleep[0], time_sleep[1]) * 60)
+
+
+def main(data_):
+    if data_[0]['exchange'] != data_[1]['exchange']:
+        trade_one(data_)
+    elif data_[0]['exchange'] == 'aevo' and data_[1]['exchange'] == 'aevo':
+        trade_double(data_)
+    else:
+        log().error('Ошибка при выборе режима')
 
 
 def run():

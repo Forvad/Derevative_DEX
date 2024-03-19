@@ -1,16 +1,13 @@
-import asyncio
-import json
 import random
 import traceback
-import ssl
 import time
 
-
-import requests
-from eip712_structs import Address, Boolean, EIP712Struct, Uint, make_domain
+from requests import Session
+from eip712_structs import Address, Boolean, EIP712Struct, Uint, make_domain, String
 from eth_account import Account
 from loguru import logger
 from web3 import Web3
+from Log.Loging import log
 
 
 w3 = Web3(
@@ -59,7 +56,6 @@ class AevoClient:
         api_key="",
         api_secret="",
         env="testnet",
-        rest_headers={},
         proxy=None
     ):
         self.signing_key = signing_key
@@ -67,19 +63,19 @@ class AevoClient:
         self.api_key = api_key
         self.api_secret = api_secret
         self.connection = None
-        self.client = requests
-        self.rest_headers = {
+        self.client = Session()
+        self.client.headers = {
             "AEVO-KEY": api_key,
             "AEVO-SECRET": api_secret,
         }
         self.extra_headers = None
-        self.rest_headers.update(rest_headers)
 
         if (env != "testnet") and (env != "mainnet"):
             raise ValueError("env must either be 'testnet' or 'mainnet'")
         self.env = env
-        self.proxy = {'http': f'http://{proxy}',
-                      'https': f'http://{proxy}'} if proxy else None
+        if proxy:
+            self.client.proxies = {'http': f'http://{proxy}',
+                                   'https': f'http://{proxy}'}
 
     @property
     def address(self):
@@ -109,30 +105,19 @@ class AevoClient:
 
     # Public REST API
     def get_index(self, asset):
-        if self.proxy:
-            req = self.client.get(f"{self.rest_url}/index?asset={asset}", proxies=self.proxy)
-        else:
-            req = self.client.get(f"{self.rest_url}/index?asset={asset}")
+        req = self.client.get(f"{self.rest_url}/index?asset={asset}")
         data = req.json()
         return data
 
     def get_markets(self, asset):
-        if not self.proxy:
-            req = self.client.get(f"{self.rest_url}/markets?asset={asset}")
-        else:
-            req = self.client.get(f"{self.rest_url}/markets?asset={asset}", proxies=self.proxy)
+        req = self.client.get(f"{self.rest_url}/markets?asset={asset}")
         data = req.json()
         return data
 
     def get_orderbook(self, instrument_name):
-        if not self.proxy:
-            req = self.client.get(
-                f"{self.rest_url}/orderbook?instrument_name={instrument_name}"
-            )
-        else:
-            req = self.client.get(
-                f"{self.rest_url}/orderbook?instrument_name={instrument_name}", proxies=self.proxy
-            )
+        req = self.client.get(
+            f"{self.rest_url}/orderbook?instrument_name={instrument_name}"
+        )
         data = req.json()
         return data
 
@@ -143,14 +128,8 @@ class AevoClient:
         data = self.create_order_rest_json(
             int(instrument_id), is_buy, limit_price, quantity, post_only
         )
-        if not self.proxy:
-            req = self.client.post(
-                f"{self.rest_url}/orders", json=data, headers=self.rest_headers
-            )
-        else:
-            req = self.client.post(
-                f"{self.rest_url}/orders", json=data, headers=self.rest_headers, proxies=self.proxy
-            )
+        req = self.client.post(
+            f"{self.rest_url}/orders", json=data)
         return req.json()
 
     def rest_create_market_order(self, instrument_id, is_buy, quantity):
@@ -166,37 +145,22 @@ class AevoClient:
             decimals=1,
             post_only=False,
         )
-        if not self.proxy:
-            req = self.client.post(
-                f"{self.rest_url}/orders", json=data, headers=self.rest_headers
-            )
-        else:
-            req = self.client.post(
-                f"{self.rest_url}/orders", json=data, headers=self.rest_headers, proxies=self.proxy
-            )
+        req = self.client.post(
+            f"{self.rest_url}/orders", json=data)
         return req.json()
 
     def rest_cancel_order(self, order_id):
-        if not self.proxy:
-            req = self.client.delete(
-                f"{self.rest_url}/orders/{order_id}", headers=self.rest_headers
-            )
-        else:
-            req = self.client.delete(
-                f"{self.rest_url}/orders/{order_id}", headers=self.rest_headers, proxies=self.proxy
-            )
+        req = self.client.delete(
+            f"{self.rest_url}/orders/{order_id}")
         logger.info(req.json())
         return req.json()
 
-    def rest_get_account(self):
-        req = self.client.get(f"{self.rest_url}/account", headers=self.rest_headers)
+    def rest_get_account(self) -> dict:
+        req = self.client.get(f"{self.rest_url}/account")
         return req.json()
 
     def rest_get_apikey(self):
-        if not self.proxy:
-            req = self.client.get(f"{self.rest_url}/account", headers=self.rest_headers)
-        else:
-            req = self.client.get(f"{self.rest_url}/account", headers=self.rest_headers, proxies=self.proxy)
+        req = self.client.get(f"{self.rest_url}/account")
         data = req.json()
         api_keys = data.get('api_keys', [])
         for api_key_info in api_keys:
@@ -204,21 +168,12 @@ class AevoClient:
         return None
 
     def rest_get_portfolio(self):
-        if not self.proxy:
-            req = self.client.get(f"{self.rest_url}/portfolio", headers=self.rest_headers)
-        else:
-            req = self.client.get(f"{self.rest_url}/portfolio", headers=self.rest_headers, proxies=self.proxy)
+        req = self.client.get(f"{self.rest_url}/portfolio")
         return req.json()
 
     def rest_get_open_orders(self):
-        if not self.proxy:
-            req = self.client.get(
-                f"{self.rest_url}/orders", json={}, headers=self.rest_headers
-            )
-        else:
-            req = self.client.get(
-                f"{self.rest_url}/orders", json={}, headers=self.rest_headers, proxies=self.proxy
-            )
+        req = self.client.get(
+            f"{self.rest_url}/orders", json={})
         return req.json()
 
     def rest_cancel_all_orders(
@@ -234,8 +189,7 @@ class AevoClient:
             body["asset"] = asset
 
         req = self.client.delete(
-            f"{self.rest_url}/orders-all", json=body, headers=self.rest_headers
-        )
+            f"{self.rest_url}/orders-all", json=body)
         return req.json()
 
     # Private WS Commands
@@ -286,17 +240,75 @@ class AevoClient:
             "timestamp": int(time.time()),
         }
 
-    def sign_order(
-        self, instrument_id, is_buy, limit_price, quantity, decimals=10**6
+    def create_order_ST_LP(
+            self,
+            instrument_id: int,
+            price_TP: (int, float),
+            price_SL: (int, float),
+            is_buy_: bool
+        ):
+        print_ = False
+        is_buy = True if not is_buy_ else False
+        decimals = 10 ** 6
+        if is_buy_:
+            limit_price = 0
+        else:
+            limit_price = 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        data = [['TAKE_PROFIT', price_TP], ['STOP_LOSS', price_SL]]
+        for i in data:
+            while True:
+                salt, signature = self.sign_order(
+                    instrument_id, is_buy, limit_price, 0, decimals=decimals
+                )
+                if isinstance(i[1], tuple):
+                    i[1] = i[1][0]
+                triger = str(int(i[1] * 10 ** 6))
+                json_data = {
+                    'maker': self.address,
+                    'is_buy': is_buy,
+                    'instrument': instrument_id,
+                    'limit_price': str(limit_price),
+                    'amount': '0',
+                    'salt': salt,
+                    'stop': i[0],
+                    'trigger': triger,
+                    'signature': signature,
+                    'reduce_only': True,
+                    'timestamp': str(int(time.time())),
+                    'close_position': True,
+                }
+                r = self.client.post('https://api.aevo.xyz/orders', json=json_data).json()
+                if not r.get('order_id'):
+                    log().error(f'Error open order {i[0]} | {r}')
+                    print_ = True
+                    time.sleep(1)
+                else:
+                    if print_:
+                        log().success('Order open not error ^_^')
+                    time.sleep(1)
+                    break
+
+    def rest_create_order_stop(
+        self, instrument_id, is_buy, limit_price, quantity, post_only=True
     ):
-        salt = random.randint(0, 10**10)  # We just need a large enough number
+        data = self.create_order_rest_json(
+            int(instrument_id), is_buy, limit_price, quantity, post_only
+        )
+        req = self.client.post(
+            f"{self.rest_url}/orders", json=data)
+        return req.json()
+
+    def sign_order(
+            self, instrument_id, is_buy, limit_price, quantity, decimals=10 ** 6
+    ):
+        salt = random.randint(0, 10 ** 10)  # We just need a large enough number
         # timestamp = int(time.time())
 
         order_struct = Order(
             maker=self.wallet_address,  # The wallet's main address
             isBuy=is_buy,
-            limitPrice=int(round(limit_price * decimals, is_buy)),
-            amount=int(round(quantity * 10**6, is_buy)),
+            limitPrice=int(round(limit_price * decimals, is_buy)) if limit_price < 1_000_000 else int(limit_price),
+            amount=int(round(quantity * 10 ** 6, is_buy)),
             salt=salt,
             instrument=instrument_id,
             timestamp=int(time.time()),  # Add the timestamp to the order object
@@ -327,6 +339,13 @@ class AevoClient:
             salt,
             Account._sign_hash(signable_bytes, self.signing_key).signature.hex(),
         )
+
+    def coin(self):
+
+        response = self.client.get('https://api.aevo.xyz/farm-boost').json()
+        token = int(float(response.get('curr_epoch_aevo_earned', 0)))
+        value = int(float(response.get('boosted_volume', 0)) / float(response.get('farm_boost_avg', 0)))
+        return token, value
 
 
 if __name__ == "__main__":
