@@ -242,7 +242,7 @@ def main(data_):
 
 def run():
     try:
-        with Pool() as pols:
+        with Pool(len(data)) as pols:
             pols.map(lambda func: main(func), data)
     except threading.ThreadError as error:
         log().error(error)
