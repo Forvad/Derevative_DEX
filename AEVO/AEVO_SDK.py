@@ -343,9 +343,19 @@ class AevoClient:
     def coin(self):
 
         response = self.client.get('https://api.aevo.xyz/farm-boost').json()
-        token = int(float(response.get('curr_epoch_aevo_earned', 0)))
+        token = round(float(response.get('curr_epoch_aevo_earned', 0)), 1)
+        token_ = int(float(response.get("prev_epoch_aevo_earned", 0)))
         value = int(float(response.get('boosted_volume', 0)) / float(response.get('farm_boost_avg', 0)))
-        return token, value
+        return token, value, token_
+
+    def claim_reward(self):
+        statistic = float(self.client.get("https://api.aevo.xyz/referral-statistics").json()
+                          .get("total_referee_discount_unclaimed", 0))
+        re = self.client.post("https://api.aevo.xyz/claim-referral-rewards").json()
+        if re.get("success"):
+            log().success(f"{self.address} | clame refferal reward | {statistic}$")
+        else:
+            log().error(f"{self.address} | error: {re}")
 
 
 if __name__ == "__main__":
